@@ -51,7 +51,7 @@ runs:
 
     - name: Install pr-swarm
       shell: bash
-      run: pip install --quiet "pr-swarm[tools] @ git+https://github.com/${{ github.action_repository || github.repository }}.git@${{ github.action_ref || 'main' }}"
+      run: pip install --quiet "pr-swarm[tools] @ git+https://github.com/t8/pr-swarm.git@main"
 
     - name: Install Gitleaks
       shell: bash
