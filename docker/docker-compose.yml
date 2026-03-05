@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: pr_swarm
+      POSTGRES_USER: pr_swarm
+      POSTGRES_PASSWORD: pr_swarm_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pr_swarm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pr-swarm:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      DATABASE_URL: postgresql://pr_swarm:pr_swarm_dev@postgres:5432/pr_swarm
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-pr-swarm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

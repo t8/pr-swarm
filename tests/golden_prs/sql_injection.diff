@@ -1,0 +1,21 @@
+diff --git a/api/users.py b/api/users.py
+index 0000000..1234567 100644
+--- a/api/users.py
++++ b/api/users.py
+@@ -1,5 +1,20 @@
++import sqlite3
++from flask import Flask, request
++
++app = Flask(__name__)
++
++@app.route('/users')
++def get_user():
++    user_id = request.args.get('id')
++    conn = sqlite3.connect('users.db')
++    cursor = conn.cursor()
++    # VULNERABLE: SQL injection via string formatting
++    query = f"SELECT * FROM users WHERE id = '{user_id}'"
++    cursor.execute(query)
++    result = cursor.fetchall()
++    conn.close()
++    return {'users': result}

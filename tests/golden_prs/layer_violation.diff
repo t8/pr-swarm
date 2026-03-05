@@ -1,0 +1,20 @@
+diff --git a/ui/components/UserList.py b/ui/components/UserList.py
+index 0000000..1234567 100644
+--- a/ui/components/UserList.py
++++ b/ui/components/UserList.py
+@@ -1,5 +1,15 @@
++# VIOLATION: UI layer importing directly from DB layer
++from db.models import User, Session
++from db.connection import get_engine
++
++class UserList:
++    def __init__(self):
++        # VIOLATION: UI should never access DB directly
++        engine = get_engine()
++        self.session = Session(bind=engine)
++
++    def get_users(self):
++        return self.session.query(User).all()
++
++    def render(self, users):
++        return [{'name': u.name, 'email': u.email} for u in users]

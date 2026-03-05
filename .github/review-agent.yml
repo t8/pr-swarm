@@ -1,0 +1,34 @@
+sensitivity: high
+
+sensitive_paths:
+  - auth/
+  - payments/
+  - secrets-management/
+  - infrastructure/
+
+ignore_paths:
+  - vendor/
+  - migrations/auto/
+  - '**/*.generated.*'
+  - '**/*.min.js'
+
+block_on:
+  - secret_detected
+  - cwe_critical
+  - missing_migration
+
+warn_on:
+  pr_size_lines: 500
+  coverage_drop_pct: 1.0
+  complexity_increase: 10
+
+max_pr_lines: 2000
+agent_timeout_seconds: 30
+
+languages:
+  python:
+    tools: [semgrep, bandit]
+  javascript:
+    tools: [semgrep, eslint-security]
+  go:
+    tools: [semgrep, gosec]

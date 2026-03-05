@@ -1,0 +1,31 @@
+diff --git a/api/routes/admin.py b/api/routes/admin.py
+index 0000000..1234567 100644
+--- a/api/routes/admin.py
++++ b/api/routes/admin.py
+@@ -1,5 +1,25 @@
++from flask import Flask, jsonify, request
++
++app = Flask(__name__)
++
++# All admin routes should use @require_admin decorator
++def require_admin(f):
++    def wrapper(*args, **kwargs):
++        if not request.headers.get('X-Admin-Token'):
++            return jsonify({'error': 'unauthorized'}), 401
++        return f(*args, **kwargs)
++    return wrapper
++
++@app.route('/admin/users', methods=['DELETE'])
++# MISSING: @require_admin decorator
++def delete_all_users():
++    """Delete all users - admin only endpoint WITHOUT auth check"""
++    db.execute("DELETE FROM users")
++    return jsonify({'status': 'deleted'})
++
++@app.route('/admin/config', methods=['PUT'])
++# MISSING: @require_admin decorator
++def update_config():
++    """Update system config - admin only endpoint WITHOUT auth check"""
++    new_config = request.json
++    db.execute("UPDATE config SET data = ?", (new_config,))
++    return jsonify({'status': 'updated'})
