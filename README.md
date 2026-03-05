@@ -35,7 +35,94 @@ PR opened → Diff Parser → ┬─ Security Auditor ──┐
 - Any HIGH or MEDIUM finding → **REQUEST_CHANGES**
 - Only LOW/INFO findings → **APPROVE**
 
-## Setup
+## Adding to Your Repository
+
+### 1. Add secrets
+
+Go to your repo's Settings → Secrets and variables → Actions, and add:
+- `ANTHROPIC_API_KEY` — your Anthropic API key
+
+(`GITHUB_TOKEN` is provided automatically by GitHub Actions.)
+
+### 2. Create the workflow
+
+Add `.github/workflows/pr-review.yml` to your repo:
+
+```yaml
+name: PR Security Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  security-events: write
+
+concurrency:
+  group: pr-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR Security Review
+        id: review
+        uses: YOUR_USER/pr-swarm@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Replace `YOUR_USER` with the GitHub user/org that hosts your pr-swarm fork.
+
+### 3. (Optional) Add a config file
+
+Create `.github/review-agent.yml` in your repo to customize behavior. See [Configuration](#configuration) below. If omitted, sensible defaults are used.
+
+### Action Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `github-token` | Yes | — | GitHub token for comments and status checks |
+| `anthropic-api-key` | Yes | — | Anthropic API key for Claude |
+| `config-path` | No | `.github/review-agent.yml` | Path to config file |
+| `sarif-output` | No | `pr-swarm-results.sarif` | Path to write SARIF file |
+| `python-version` | No | `3.12` | Python version |
+| `gitleaks-version` | No | `8.18.4` | Gitleaks version |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `action` | Verdict: `APPROVE`, `REQUEST_CHANGES`, or `BLOCK` |
+| `findings-count` | Total number of findings |
+| `sarif-file` | Path to SARIF output file |
+
+You can use outputs in subsequent steps:
+
+```yaml
+- name: PR Security Review
+  id: review
+  uses: YOUR_USER/pr-swarm@main
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+- name: Fail on block
+  if: steps.review.outputs.action == 'BLOCK'
+  run: exit 1
+```
+
+## Local Development Setup
 
 ### Requirements
 
@@ -66,10 +153,6 @@ Optional:
 - `DATABASE_URL` — Postgres connection for memory layer
 - `LANGSMITH_API_KEY` — LangSmith tracing
 - `SARIF_OUTPUT_PATH` — Path to write SARIF output
-
-### GitHub Actions
-
-The workflow at `.github/workflows/pr-review-agent.yml` runs automatically on PR open/sync/reopen. Add `ANTHROPIC_API_KEY` to your repository secrets.
 
 ## Usage
 

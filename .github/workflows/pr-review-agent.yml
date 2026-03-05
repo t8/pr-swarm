@@ -24,36 +24,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: PR Security Review
+        uses: ./
         with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[tools]"
-          pip install semgrep
-
-      - name: Install Gitleaks
-        run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.4_linux_x64.tar.gz | tar xz
-          sudo mv gitleaks /usr/local/bin/
-
-      - name: Run PR Review Agent
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SARIF_OUTPUT_PATH: results.sarif
-        run: |
-          python -m pr_swarm \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --config .github/review-agent.yml \
-            --sarif-output results.sarif
-
-      - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: results.sarif
-        continue-on-error: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          config-path: .github/review-agent.yml

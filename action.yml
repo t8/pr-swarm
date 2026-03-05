@@ -1,0 +1,99 @@
+name: 'PR Swarm Security Review'
+description: 'Automated PR security review with 5 parallel specialist agents'
+author: 'pr-swarm'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token for posting comments and status checks'
+    required: true
+  anthropic-api-key:
+    description: 'Anthropic API key for Claude'
+    required: true
+  config-path:
+    description: 'Path to review-agent.yml config file'
+    required: false
+    default: '.github/review-agent.yml'
+  sarif-output:
+    description: 'Path to write SARIF output file'
+    required: false
+    default: 'pr-swarm-results.sarif'
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.12'
+  gitleaks-version:
+    description: 'Gitleaks version to install'
+    required: false
+    default: '8.18.4'
+
+outputs:
+  action:
+    description: 'Review verdict (APPROVE, REQUEST_CHANGES, or BLOCK)'
+    value: ${{ steps.review.outputs.action }}
+  findings-count:
+    description: 'Total number of findings'
+    value: ${{ steps.review.outputs.findings_count }}
+  sarif-file:
+    description: 'Path to SARIF output file'
+    value: ${{ inputs.sarif-output }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install pr-swarm
+      shell: bash
+      run: pip install --quiet "pr-swarm[tools] @ git+https://github.com/${{ github.action_repository || github.repository }}.git@${{ github.action_ref || 'main' }}"
+
+    - name: Install Gitleaks
+      shell: bash
+      run: |
+        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${{ inputs.gitleaks-version }}/gitleaks_${{ inputs.gitleaks-version }}_linux_x64.tar.gz" | tar xz
+        sudo mv gitleaks /usr/local/bin/
+
+    - name: Run PR Review
+      id: review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        SARIF_OUTPUT_PATH: ${{ inputs.sarif-output }}
+      run: |
+        CONFIG_ARG=""
+        if [ -f "${{ inputs.config-path }}" ]; then
+          CONFIG_ARG="--config ${{ inputs.config-path }}"
+        fi
+
+        set +e
+        OUTPUT=$(python -m pr_swarm \
+          --repo "${{ github.repository }}" \
+          --pr "${{ github.event.pull_request.number }}" \
+          $CONFIG_ARG \
+          --sarif-output "${{ inputs.sarif-output }}" 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        ACTION=$(echo "$OUTPUT" | python -c "import sys, json; d = json.load(sys.stdin); print(d['action'])" 2>/dev/null || echo "UNKNOWN")
+        COUNT=$(echo "$OUTPUT" | python -c "import sys, json; d = json.load(sys.stdin); print(len(d.get('findings', [])))" 2>/dev/null || echo "0")
+
+        echo "action=$ACTION" >> "$GITHUB_OUTPUT"
+        echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+        exit $EXIT_CODE
+
+    - name: Upload SARIF
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-output }}
+      continue-on-error: true

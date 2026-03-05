@@ -64,6 +64,12 @@ The synthesizer LLM can upgrade but never downgrade the deterministic action.
 - Tool wrappers in `pr_swarm/tools/` return dataclasses, never raw dicts
 - Tests use `unittest.mock.patch` to mock GitHub API calls; integration tests require `ANTHROPIC_API_KEY`
 
+## GitHub Action
+
+`action.yml` at the repo root defines a composite GitHub Action so other repos can use pr-swarm with `uses: USER/pr-swarm@main`. The action handles Python setup, pip installing pr-swarm from the repo, installing Gitleaks, running the review, and uploading SARIF. It exposes `action`, `findings-count`, and `sarif-file` as outputs.
+
+The pr-swarm repo's own workflow (`.github/workflows/pr-review-agent.yml`) dogfoods the action via `uses: ./`.
+
 ## Config
 
 Per-repo config lives at `.github/review-agent.yml`. Key fields: `sensitivity`, `sensitive_paths`, `ignore_paths`, `block_on`, `warn_on`, `max_pr_lines`, `agent_timeout_seconds`, `languages`. Defaults are in `config.py:DEFAULT_CONFIG`.
