@@ -20,6 +20,12 @@ class Action(str, Enum):
     BLOCK = "BLOCK"
 
 
+class Triage(str, Enum):
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    FOR_REVIEW = "FOR_REVIEW"
+    INFORMATIONAL = "INFORMATIONAL"
+
+
 class Finding(BaseModel):
     severity: Severity
     agent: str
@@ -28,6 +34,7 @@ class Finding(BaseModel):
     description: str
     cwe_id: Optional[str] = None
     suggestion: Optional[str] = None
+    triage: Triage = Triage.FOR_REVIEW
 
 
 class ReviewResult(BaseModel):

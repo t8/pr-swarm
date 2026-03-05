@@ -111,6 +111,37 @@ class GitHubClient:
             .json()
         )
 
+    def create_review(
+        self,
+        repo: str,
+        pr_number: int,
+        body: str,
+        event: str,
+        comments: list[dict] | None = None,
+    ) -> dict:
+        """Create a pull request review with inline comments.
+
+        event: APPROVE, REQUEST_CHANGES, or COMMENT
+        comments: list of {path, line, body} for inline comments
+        """
+        payload: dict = {
+            "body": body,
+            "event": event,
+        }
+        if comments:
+            payload["comments"] = [
+                {"path": c["path"], "line": c["line"], "body": c["body"]}
+                for c in comments
+            ]
+        return (
+            self._client.post(
+                f"/repos/{repo}/pulls/{pr_number}/reviews",
+                json=payload,
+            )
+            .raise_for_status()
+            .json()
+        )
+
     def add_label(self, repo: str, pr_number: int, label: str) -> None:
         self._client.post(
             f"/repos/{repo}/issues/{pr_number}/labels",

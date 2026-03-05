@@ -6,7 +6,7 @@ import time
 from langgraph.graph import END, START, StateGraph
 
 from pr_swarm.github.api import GitHubClient
-from pr_swarm.github.comment import format_review_comment
+from pr_swarm.github.comment import build_inline_comments, format_review_body
 from pr_swarm.github.sarif import write_sarif
 from pr_swarm.models import Action
 from pr_swarm.nodes.architecture_cop import architecture_cop
@@ -104,7 +104,7 @@ def run_review(repo: str, pr_number: int, config: dict | None = None) -> ReviewS
 
 
 def _post_results(state: ReviewState, elapsed: float) -> None:
-    """Post review results to GitHub."""
+    """Post review results to GitHub as a proper PR review with inline comments."""
     result = state.get("review_result")
     if not result:
         return
@@ -112,11 +112,33 @@ def _post_results(state: ReviewState, elapsed: float) -> None:
     repo = state["repo_full_name"]
     pr_number = state["pr_number"]
 
-    comment_body = format_review_comment(result, elapsed)
+    review_body = format_review_body(result, elapsed)
+
+    # Map action to GitHub review event
+    # GitHub doesn't have BLOCK — REQUEST_CHANGES + branch protection achieves the same
+    event_map = {
+        Action.APPROVE: "APPROVE",
+        Action.REQUEST_CHANGES: "REQUEST_CHANGES",
+        Action.BLOCK: "REQUEST_CHANGES",
+    }
+    review_event = event_map.get(result.action, "COMMENT")
+
+    # Build inline comments for findings with file + line
+    parsed_diff = state.get("parsed_diff")
+    valid_files = {f.path for f in parsed_diff.files} if parsed_diff else None
+    inline_comments = build_inline_comments(result.findings, valid_files)
 
     try:
         client = GitHubClient()
-        client.post_review_comment(repo, pr_number, comment_body)
+
+        # Submit as a real PR review with inline comments
+        client.create_review(
+            repo=repo,
+            pr_number=pr_number,
+            body=review_body,
+            event=review_event,
+            comments=inline_comments if inline_comments else None,
+        )
 
         head_sha = client.get_head_sha(repo, pr_number)
 

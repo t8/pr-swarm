@@ -1,5 +1,5 @@
-from pr_swarm.models import Action, Finding, Severity
-from pr_swarm.nodes.synthesizer import _collect_findings, _determine_action
+from pr_swarm.models import Action, Finding, Severity, Triage
+from pr_swarm.nodes.synthesizer import _apply_default_triage, _collect_findings, _determine_action
 
 
 class TestDetermineAction:
@@ -84,3 +84,46 @@ class TestCollectFindings:
             "style_findings": [],
         }
         assert len(_collect_findings(state)) == 0
+
+
+class TestApplyDefaultTriage:
+    def test_critical_is_action_required(self):
+        findings = [Finding(severity=Severity.CRITICAL, agent="security_auditor", file="a.py", description="rce")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.ACTION_REQUIRED
+
+    def test_high_is_action_required(self):
+        findings = [Finding(severity=Severity.HIGH, agent="security_auditor", file="a.py", description="xss")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.ACTION_REQUIRED
+
+    def test_medium_is_for_review(self):
+        findings = [Finding(severity=Severity.MEDIUM, agent="coverage_checker", file="a.py", description="no tests")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.FOR_REVIEW
+
+    def test_low_is_informational(self):
+        findings = [Finding(severity=Severity.LOW, agent="style_checker", file="a.py", description="naming")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.INFORMATIONAL
+
+    def test_info_is_informational(self):
+        findings = [Finding(severity=Severity.INFO, agent="style_checker", file="a.py", description="note")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.INFORMATIONAL
+
+    def test_secrets_high_is_action_required(self):
+        findings = [Finding(severity=Severity.HIGH, agent="secrets_scanner", file="config.py", description="api key")]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.ACTION_REQUIRED
+
+    def test_mixed(self):
+        findings = [
+            Finding(severity=Severity.CRITICAL, agent="security_auditor", file="a.py", description="rce"),
+            Finding(severity=Severity.MEDIUM, agent="architecture_cop", file="b.py", description="coupling"),
+            Finding(severity=Severity.LOW, agent="style_checker", file="c.py", description="naming"),
+        ]
+        _apply_default_triage(findings)
+        assert findings[0].triage == Triage.ACTION_REQUIRED
+        assert findings[1].triage == Triage.FOR_REVIEW
+        assert findings[2].triage == Triage.INFORMATIONAL

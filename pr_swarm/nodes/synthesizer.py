@@ -4,7 +4,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from pr_swarm.models import Action, Finding, ReviewResult, Severity
+from pr_swarm.models import Action, Finding, ReviewResult, Severity, Triage
 from pr_swarm.state import ReviewState
 
 SYSTEM_PROMPT = """You are the final synthesizer for a PR security review system.
@@ -13,8 +13,21 @@ You receive findings from multiple specialist agents and must produce a final ve
 Your job:
 1. Deduplicate overlapping findings (same file + similar description = one finding)
 2. Validate severity levels are appropriate
-3. Determine the final action (APPROVE, REQUEST_CHANGES, or BLOCK)
-4. Write a concise summary (max 280 chars)
+3. Classify each finding into a triage tier:
+   - ACTION_REQUIRED: Findings that must be fixed before merge. Security vulnerabilities, leaked secrets, breaking changes, critical bugs.
+   - FOR_REVIEW: Findings worth human review but not necessarily blocking. Architecture concerns, coverage gaps, potential issues that depend on context.
+   - INFORMATIONAL: Low-priority suggestions, style nits, and observations. Useful but safe to skip.
+4. Determine the final action (APPROVE, REQUEST_CHANGES, or BLOCK)
+5. Write a concise summary (max 280 chars)
+
+Triage guidelines:
+- CRITICAL/HIGH severity from secrets_scanner → always ACTION_REQUIRED
+- CRITICAL severity → always ACTION_REQUIRED
+- HIGH severity → ACTION_REQUIRED unless the finding is clearly a false positive in context
+- MEDIUM severity → FOR_REVIEW by default, ACTION_REQUIRED if in a sensitive path
+- LOW severity → INFORMATIONAL by default, FOR_REVIEW if it's a genuine code quality issue
+- INFO severity → always INFORMATIONAL
+- Findings about CI config, naming, or style → INFORMATIONAL unless they're security-relevant
 
 Escalation rules (MUST follow):
 - Any CRITICAL or HIGH finding from secrets_scanner → BLOCK
@@ -34,7 +47,7 @@ class SynthesizedResult(BaseModel):
 
 
 def synthesizer(state: ReviewState) -> dict:
-    """Merge all findings, deduplicate, apply severity logic, emit ReviewResult."""
+    """Merge all findings, deduplicate, apply severity logic and triage, emit ReviewResult."""
     all_findings = _collect_findings(state)
     errors = state.get("errors", [])
 
@@ -48,6 +61,7 @@ def synthesizer(state: ReviewState) -> dict:
         }
 
     deterministic_action = _determine_action(all_findings)
+    _apply_default_triage(all_findings)
 
     try:
         llm = ChatAnthropic(
@@ -69,9 +83,11 @@ def synthesizer(state: ReviewState) -> dict:
 {_format_errors(errors)}
 
 The deterministic escalation logic suggests: {deterministic_action.value}
-You may upgrade the action (e.g., REQUEST_CHANGES → BLOCK) but never downgrade it.
+You may upgrade the action (e.g., REQUEST_CHANGES -> BLOCK) but never downgrade it.
 
-Return the deduplicated findings, final action, summary (max 280 chars), and block_reason if blocking."""),
+For each finding, set the triage field to ACTION_REQUIRED, FOR_REVIEW, or INFORMATIONAL.
+
+Return the deduplicated findings with triage set, final action, summary (max 280 chars), and block_reason if blocking."""),
         ])
 
         if result:
@@ -104,6 +120,23 @@ def _collect_findings(state: ReviewState) -> list[Finding]:
     return findings
 
 
+def _apply_default_triage(findings: list[Finding]) -> None:
+    """Apply deterministic default triage based on severity and agent."""
+    for f in findings:
+        if f.agent == "secrets_scanner" and f.severity in (Severity.CRITICAL, Severity.HIGH):
+            f.triage = Triage.ACTION_REQUIRED
+        elif f.severity == Severity.CRITICAL:
+            f.triage = Triage.ACTION_REQUIRED
+        elif f.severity == Severity.HIGH:
+            f.triage = Triage.ACTION_REQUIRED
+        elif f.severity == Severity.MEDIUM:
+            f.triage = Triage.FOR_REVIEW
+        elif f.severity == Severity.LOW:
+            f.triage = Triage.INFORMATIONAL
+        elif f.severity == Severity.INFO:
+            f.triage = Triage.INFORMATIONAL
+
+
 def _determine_action(findings: list[Finding]) -> Action:
     for f in findings:
         if f.severity in (Severity.CRITICAL, Severity.HIGH) and f.agent == "secrets_scanner":
@@ -132,7 +165,7 @@ def _format_findings_for_llm(findings: list[Finding]) -> str:
     for f in findings:
         loc = f"{f.file}:{f.line}" if f.line else f.file
         cwe = f" [{f.cwe_id}]" if f.cwe_id else ""
-        parts.append(f"- [{f.severity.value}] ({f.agent}){cwe} {loc}: {f.description}")
+        parts.append(f"- [{f.severity.value}] ({f.agent}){cwe} {loc}: {f.description} [default triage: {f.triage.value}]")
     return "\n".join(parts)
 
 
