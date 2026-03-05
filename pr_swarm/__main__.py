@@ -32,7 +32,10 @@ def main() -> None:
     result = final_state.get("review_result")
     if result:
         print(json.dumps(result.model_dump(), indent=2, default=str))
-        sys.exit(0 if result.action.value == "APPROVE" else 1)
+        # Exit 0 on successful review regardless of verdict.
+        # The verdict is communicated via PR review event and check runs.
+        # Exit 1 only on BLOCK so the workflow step fails visibly.
+        sys.exit(1 if result.action.value == "BLOCK" else 0)
     else:
         print("Review did not produce a result.", file=sys.stderr)
         sys.exit(2)
