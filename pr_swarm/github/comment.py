@@ -14,7 +14,12 @@ SEVERITY_ORDER = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LO
 
 
 def format_review_body(result: ReviewResult, elapsed_seconds: float) -> str:
-    """Format the top-level review body (summary + triage-grouped findings)."""
+    """Format the top-level review body.
+
+    ACTION_REQUIRED and FOR_REVIEW findings with file+line are posted as inline
+    comments, so they are omitted from the body. INFORMATIONAL findings and any
+    findings without a line number are listed in the body.
+    """
     action_label = result.action.value
     agent_count = len({f.agent for f in result.findings})
     finding_count = len(result.findings)
@@ -34,7 +39,29 @@ def format_review_body(result: ReviewResult, elapsed_seconds: float) -> str:
     if result.block_reason:
         lines.extend(["", f"> **Block reason:** {result.block_reason}"])
 
-    grouped = _group_by_triage(result.findings)
+    # Findings that go inline (have file+line and are not INFORMATIONAL)
+    inline_set = {
+        id(f) for f in result.findings
+        if f.triage in (Triage.ACTION_REQUIRED, Triage.FOR_REVIEW)
+        and f.line
+        and f.file
+        and f.file != "(overall)"
+    }
+
+    # Body gets: INFORMATIONAL findings + any ACTION_REQUIRED/FOR_REVIEW without a line
+    body_findings = [f for f in result.findings if id(f) not in inline_set]
+    inline_findings = [f for f in result.findings if id(f) in inline_set]
+
+    # Show a note about inline comments if there are any
+    if inline_findings:
+        lines.extend([
+            "",
+            f"*{len(inline_findings)} finding{'s' if len(inline_findings) != 1 else ''} "
+            f"posted as inline comments on the diff.*",
+        ])
+
+    # Group remaining body findings by triage
+    grouped = _group_by_triage(body_findings)
     for triage in TRIAGE_ORDER:
         findings = grouped.get(triage, [])
         if not findings:
@@ -64,12 +91,13 @@ def build_inline_comments(
 ) -> list[dict]:
     """Build GitHub PR review inline comment objects from findings.
 
-    Returns a list of dicts with keys: path, line, body.
-    Only includes findings that have both a file and line number.
-    If valid_files is provided, only includes findings for those files.
+    Only ACTION_REQUIRED and FOR_REVIEW findings with file+line become inline
+    comments. INFORMATIONAL findings are excluded (they stay in the review body).
     """
     comments = []
     for f in findings:
+        if f.triage == Triage.INFORMATIONAL:
+            continue
         if not f.line or not f.file or f.file == "(overall)":
             continue
         if valid_files is not None and f.file not in valid_files:
